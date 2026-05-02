@@ -30,7 +30,7 @@ func (r *ExpenseRepository) Create(ctx context.Context, expense *domain.Expense,
 		INSERT INTO expenses (id, group_id, payer_id, amount_cents, description, split_method, created_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)`,
 		expense.ID, expense.GroupID, expense.PayerID,
-		toCents(expense.Amount), expense.Description, expense.SplitMethod, expense.CreatedAt,
+		expense.Amount, expense.Description, expense.SplitMethod, expense.CreatedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("insert expense: %w", err)
@@ -41,7 +41,7 @@ func (r *ExpenseRepository) Create(ctx context.Context, expense *domain.Expense,
 		batch.Queue(`
 			INSERT INTO expense_splits (id, expense_id, user_id, amount_owed_cents)
 			VALUES ($1, $2, $3, $4)`,
-			s.ID, expense.ID, s.UserID, toCents(s.AmountOwed),
+			s.ID, expense.ID, s.UserID, s.AmountOwed,
 		)
 	}
 	if err := tx.SendBatch(ctx, batch).Close(); err != nil {
@@ -53,7 +53,7 @@ func (r *ExpenseRepository) Create(ctx context.Context, expense *domain.Expense,
 
 func (r *ExpenseRepository) FindByID(ctx context.Context, id uuid.UUID) (*domain.Expense, error) {
 	row := r.db.QueryRow(ctx, `
-		SELECT id, group_id, payer_id, amount_cents/100.0 AS amount,
+		SELECT id, group_id, payer_id, amount_cents,
 		       description, split_method, created_at
 		FROM expenses WHERE id = $1`, id)
 
@@ -67,7 +67,7 @@ func (r *ExpenseRepository) FindByID(ctx context.Context, id uuid.UUID) (*domain
 
 func (r *ExpenseRepository) ListByGroup(ctx context.Context, groupID uuid.UUID) ([]*domain.Expense, error) {
 	rows, err := r.db.Query(ctx, `
-		SELECT id, group_id, payer_id, amount_cents/100.0 AS amount,
+		SELECT id, group_id, payer_id, amount_cents,
 		       description, split_method, created_at
 		FROM expenses WHERE group_id = $1
 		ORDER BY created_at DESC`, groupID)
@@ -87,13 +87,11 @@ func (r *ExpenseRepository) ListByGroup(ctx context.Context, groupID uuid.UUID) 
 	return out, rows.Err()
 }
 
-// GetNetBalance returns the net balance for a user in a group.
+// GetNetBalance returns the net balance for a user in a group (in cents).
 //
 //   Net = (sum of splits the user PAID for others)
 //       - (sum of splits the user OWES to others)
-//
-// Using a single aggregating query avoids N+1 round-trips.
-func (r *ExpenseRepository) GetNetBalance(ctx context.Context, groupID, userID uuid.UUID) (float64, error) {
+func (r *ExpenseRepository) GetNetBalance(ctx context.Context, groupID, userID uuid.UUID) (int64, error) {
 	row := r.db.QueryRow(ctx, `
 		SELECT
 		  COALESCE(
@@ -114,10 +112,10 @@ func (r *ExpenseRepository) GetNetBalance(ctx context.Context, groupID, userID u
 	if err := row.Scan(&cents); err != nil {
 		return 0, err
 	}
-	return float64(cents) / 100.0, nil
+	return cents, nil
 }
 
-// GetGroupBalances returns net balances for all members in a group.
+// GetGroupBalances returns net balances (in cents) for all members in a group.
 func (r *ExpenseRepository) GetGroupBalances(ctx context.Context, groupID uuid.UUID) ([]*domain.UserBalance, error) {
 	rows, err := r.db.Query(ctx, `
 		WITH member_balance AS (
@@ -138,7 +136,7 @@ func (r *ExpenseRepository) GetGroupBalances(ctx context.Context, groupID uuid.U
 		  WHERE m.group_id = $1
 		  GROUP BY m.user_id
 		)
-		SELECT mb.user_id, u.display_name, mb.net_cents / 100.0 AS net_balance
+		SELECT mb.user_id, u.display_name, mb.net_cents
 		FROM member_balance mb
 		JOIN users u ON u.id = mb.user_id
 		ORDER BY mb.net_cents DESC
@@ -157,8 +155,4 @@ func (r *ExpenseRepository) GetGroupBalances(ctx context.Context, groupID uuid.U
 		out = append(out, &b)
 	}
 	return out, rows.Err()
-}
-
-func toCents(amount float64) int64 {
-	return int64(amount * 100)
 }

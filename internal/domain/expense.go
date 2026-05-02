@@ -18,7 +18,7 @@ type Expense struct {
 	ID          uuid.UUID   `json:"id"`
 	GroupID     uuid.UUID   `json:"group_id"`
 	PayerID     uuid.UUID   `json:"payer_id"`
-	Amount      float64     `json:"amount"` // stored in minor units (cents) in DB
+	Amount      int64       `json:"amount"` // integer cents
 	Description string      `json:"description"`
 	SplitMethod SplitMethod `json:"split_method"`
 	CreatedAt   time.Time   `json:"created_at"`
@@ -28,7 +28,7 @@ type ExpenseSplit struct {
 	ID         uuid.UUID `json:"id"`
 	ExpenseID  uuid.UUID `json:"expense_id"`
 	UserID     uuid.UUID `json:"user_id"`
-	AmountOwed float64   `json:"amount_owed"`
+	AmountOwed int64     `json:"amount_owed"` // integer cents
 }
 
 // UserBalance represents a user's net balance within a group.
@@ -36,7 +36,7 @@ type ExpenseSplit struct {
 type UserBalance struct {
 	UserID      uuid.UUID `json:"user_id"`
 	DisplayName string    `json:"display_name"`
-	NetBalance  float64   `json:"net_balance"`
+	NetBalance  int64     `json:"net_balance"` // integer cents
 }
 
 // DebtSummary represents a simplified debt between two users.
@@ -45,5 +45,5 @@ type DebtSummary struct {
 	FromUserName string    `json:"from_user_name"`
 	ToUserID     uuid.UUID `json:"to_user_id"`
 	ToUserName   string    `json:"to_user_name"`
-	Amount       float64   `json:"amount"`
+	Amount       int64     `json:"amount"` // integer cents
 }

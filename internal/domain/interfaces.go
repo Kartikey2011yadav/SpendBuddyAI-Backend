@@ -41,7 +41,7 @@ type ExpenseRepository interface {
 	Create(ctx context.Context, expense *Expense, splits []*ExpenseSplit) error
 	FindByID(ctx context.Context, id uuid.UUID) (*Expense, error)
 	ListByGroup(ctx context.Context, groupID uuid.UUID) ([]*Expense, error)
-	GetNetBalance(ctx context.Context, groupID, userID uuid.UUID) (float64, error)
+	GetNetBalance(ctx context.Context, groupID, userID uuid.UUID) (int64, error)
 	GetGroupBalances(ctx context.Context, groupID uuid.UUID) ([]*UserBalance, error)
 }
 
