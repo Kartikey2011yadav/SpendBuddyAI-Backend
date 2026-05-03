@@ -19,6 +19,7 @@ type Group struct {
 	Description *string   `json:"description,omitempty"`
 	AvatarURL   *string   `json:"avatar_url,omitempty"`
 	CreatedBy   uuid.UUID `json:"created_by"`
+	Currency    string    `json:"currency"`
 	CreatedAt   time.Time `json:"created_at"`
 }
 

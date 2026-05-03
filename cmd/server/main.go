@@ -67,9 +67,11 @@ func main() {
 	authH    := handler.NewAuthHandler(googleSvc, otpSvc, jwtSvc)
 	chatH    := handler.NewChatHandler(hub, msgRepo, groupRepo)
 	expH     := handler.NewExpenseHandler(expSvc, groupRepo, hub)
+	userH    := handler.NewUserHandler(userRepo)
+	groupH   := handler.NewGroupHandler(groupRepo, userRepo)
 
 	// ── Router ─────────────────────────────────────────────────────────────────
-	e := delivery.NewRouter(jwtSvc, authH, chatH, expH)
+	e := delivery.NewRouter(jwtSvc, authH, chatH, expH, userH, groupH)
 
 	// ── Graceful shutdown ──────────────────────────────────────────────────────
 	srv := &http.Server{

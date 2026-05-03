@@ -3,13 +3,13 @@
 ## Connection
 
 ```
-GET /ws/groups/:group_id
+GET /api/v1/ws/groups/:group_id
 Authorization: Bearer <access_token>
 ```
 
 Or via query param (for environments where headers aren't available):
 ```
-GET /ws/groups/:group_id?token=<access_token>
+GET /api/v1/ws/groups/:group_id?token=<access_token>
 ```
 
 The server validates the JWT, then checks that the user is a member of the group. Non-members receive `403` before the upgrade.
@@ -103,18 +103,23 @@ Server → All clients in group:
     {
       "user_id": "uuid-1",
       "display_name": "Jane",
-      "net_balance": 45.00
+      "net_balance": 4500
     },
     {
       "user_id": "uuid-2",
       "display_name": "Bob",
-      "net_balance": -45.00
+      "net_balance": -4500
     }
   ]
 }
 ```
 
-This is a full snapshot of all member balances — the client should replace its local balance state with this payload, not merge it.
+**Important:** `net_balance` in the WebSocket payload is **integer minor units** (same as the domain layer) — not human-readable dollars/yen. To display the amount, divide by `10^decimal_places` for the group's currency. Fetch the group's currency code from `GET /api/v1/groups` and its `decimal_places` from `GET /api/v1/currencies`.
+
+Example for a JPY group (decimal_places=0): `net_balance: 4500` → display as ¥4500.
+Example for a USD group (decimal_places=2): `net_balance: 4500` → display as $45.00.
+
+This payload is a **full snapshot** — replace local balance state entirely, do not merge.
 
 The broadcast is fire-and-forget: if a client is not connected, they will see the updated balance the next time they call `GET /api/v1/groups/:group_id/balances`.
 
@@ -137,7 +142,7 @@ type WSMessage struct {
 ## Connection Lifecycle
 
 ```
-1. Client connects to /ws/groups/:group_id
+1. Client connects to /api/v1/ws/groups/:group_id
 2. Server validates JWT + membership
 3. Hub registers client into group room
 4. ReadPump + WritePump goroutines start

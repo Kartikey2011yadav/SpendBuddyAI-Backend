@@ -127,10 +127,21 @@ Build: `docker build -t spendbuddy-api .`
 
 ```bash
 make migrate
-# Equivalent to: psql $DATABASE_URL -f migrations/001_schema.sql
+# Applies all migrations in order
 ```
 
-Migrations are plain SQL files in `/migrations/`. There is no migration framework currently — apply in order by filename.
+Migrations are plain SQL files in `/migrations/`. There is no migration framework — apply in filename order:
+
+| File | Description |
+|---|---|
+| `001_schema.sql` | Initial schema |
+| `002_currencies.sql` | Adds `preferred_currency` (users) and `currency` (groups) |
+
+To apply manually:
+```bash
+psql $DATABASE_URL -f migrations/001_schema.sql
+psql $DATABASE_URL -f migrations/002_currencies.sql
+```
 
 ---
 

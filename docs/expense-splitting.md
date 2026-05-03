@@ -1,20 +1,32 @@
 # Expense Splitting
 
+All monetary values in the service layer are `int64` **minor units** (cents for most currencies, whole units for JPY). The handler converts from human-readable `float64` on input and back on output using `domain.MinorUnitFactor(groupCurrency)`.
+
+---
+
 ## Split Methods
 
 ### Equal
 
-All group members share the expense equally. The last member absorbs any rounding remainder to ensure the total always equals the original amount.
+All group members share the expense equally. Integer division is used throughout — the last member absorbs any indivisible remainder (at most `n-1` minor units for a group of `n` members).
 
 ```
-Amount: $100.00, Members: 3
-→ Member 1: $33.33
-→ Member 2: $33.33
-→ Member 3: $33.34  ← absorbs rounding
-Sum: $100.00 ✓
+Amount: ¥10000 (JPY, factor=1), Members: 3
+→ share = 10000 / 3 = 3333
+→ Member 1: 3333
+→ Member 2: 3333
+→ Member 3: 3334  ← absorbs remainder (10000 - 3333×2)
+Sum: 10000 ✓
+
+Amount: $100.00 (USD, stored as 10000 cents), Members: 3
+→ share = 10000 / 3 = 3333 cents ($33.33)
+→ Member 1: 3333 cents
+→ Member 2: 3333 cents
+→ Member 3: 3334 cents  ← absorbs 1 cent remainder
+Sum: 10000 cents = $100.00 ✓
 ```
 
-**Request:** No `splits` array needed.
+**Request:** No `splits` map needed.
 ```json
 { "amount": 100.00, "split_method": "equal" }
 ```
@@ -23,7 +35,7 @@ Sum: $100.00 ✓
 
 ### Exact
 
-Each member's share is specified explicitly. The sum of all amounts must equal the expense amount (tolerance: ±$0.01).
+Each member's share is specified explicitly in the `splits` map as `{ "user_id": amount }`. The sum of all amounts must equal the expense amount **exactly** (integer comparison after converting to minor units).
 
 ```
 Amount: $90.00
@@ -37,26 +49,28 @@ Sum: $90.00 ✓
 {
   "amount": 90.00,
   "split_method": "exact",
-  "splits": [
-    { "user_id": "uuid-jane", "amount": 50.00 },
-    { "user_id": "uuid-bob",  "amount": 40.00 }
-  ]
+  "splits": {
+    "uuid-jane": 50.00,
+    "uuid-bob":  40.00
+  }
 }
 ```
 
-**Validation error** if `sum(amounts) ≠ expense_amount ± 0.01`.
+**Validation error** if `sum(splits) ≠ amount` after conversion to minor units.
 
 ---
 
 ### Percentage
 
-Each member's share is specified as a percentage. Percentages must sum to 100 (tolerance: ±0.01). Each share is calculated as `amount × percentage / 100`, rounded to cents.
+Each member's share is specified as a percentage in the `splits` map as `{ "user_id": percentage }`. Percentages must sum to exactly **100**.
+
+Each share is calculated as `int64(math.Round(amount_minor × pct / 100.0))`. Any rounding remainder is absorbed by the member with the largest percentage.
 
 ```
-Amount: $200.00
-→ Jane:  60% → $120.00
-→ Bob:   40% → $80.00
-Sum: $200.00 ✓
+Amount: $200.00 (20000 cents), JPY ¥20000
+→ Jane: 60% → int64(Round(20000 × 60/100)) = 12000
+→ Bob:  40% → int64(Round(20000 × 40/100)) = 8000
+Sum: 20000 ✓
 ```
 
 **Request:**
@@ -64,14 +78,14 @@ Sum: $200.00 ✓
 {
   "amount": 200.00,
   "split_method": "percentage",
-  "splits": [
-    { "user_id": "uuid-jane", "percentage": 60 },
-    { "user_id": "uuid-bob",  "percentage": 40 }
-  ]
+  "splits": {
+    "uuid-jane": 60,
+    "uuid-bob":  40
+  }
 }
 ```
 
-**Validation error** if `sum(percentages) ≠ 100 ± 0.01`.
+**Validation error** if `sum(percentages) ≠ 100`.
 
 ---
 
@@ -79,7 +93,11 @@ Sum: $200.00 ✓
 
 **File:** `internal/expense/service.go::computeSplits()`
 
-All amounts are converted to integer cents before any arithmetic to avoid floating-point errors. The service layer receives `float64` from the API but immediately converts to `int64` cents for computation.
+The handler converts the client's `float64` amount to `int64` minor units before calling the service. The service works exclusively in `int64`:
+
+- **Equal:** `share = amount / n`, `remainder = amount - share*n` → added to last member
+- **Exact:** sum check is `total == amount` (exact integer equality)
+- **Percentage:** `math.Round` used only for the floating-point percentage multiplication; result cast to `int64`; remainder (if any) absorbed by the highest-percentage member
 
 ---
 
@@ -87,11 +105,14 @@ All amounts are converted to integer cents before any arithmetic to avoid floati
 
 **File:** `internal/expense/balance.go`
 
-After expenses are created, the net balance for each member is computed using a single SQL query with a CTE:
+After expenses are created, the net balance for each member is computed with a single aggregating SQL query using a CTE:
 
 ```
-NetBalance(user) = SUM(amount paid by user) - SUM(amount owed by user)
+NetBalance(user) = SUM(splits in expenses paid by user, for others)
+                - SUM(splits owed by user, in expenses paid by others)
 ```
+
+Result is `int64` minor units.
 
 - `NetBalance > 0`: others owe this person
 - `NetBalance < 0`: this person owes others
@@ -103,41 +124,45 @@ NetBalance(user) = SUM(amount paid by user) - SUM(amount owed by user)
 
 **File:** `internal/expense/balance.go::SimplifyDebts()`
 
-Raw balances may require O(n) transactions (e.g., A→B, B→C, C→A). The greedy min-cash-flow algorithm reduces this to the minimum number of transactions.
+Raw per-member balances may require O(n) transactions (e.g., A→B, B→C, C→A). The greedy min-cash-flow algorithm reduces this to the minimum number of settlement transactions.
 
 ### Algorithm
 
 ```
-Input: [Jane: +$45, Bob: -$30, Carol: -$15]
+Input: [Jane: +4500, Bob: -3000, Carol: -1500]  (minor units)
 
-Step 1: Find max creditor (Jane: +$45) and max debtor (Bob: -$30)
-Step 2: Settle min(45, 30) = $30
-        → Bob pays Jane $30
-        → Jane: +$15, Bob: $0, Carol: -$15
+Step 1: Max creditor = Jane (+4500), max debtor = Bob (-3000)
+Step 2: Settle min(4500, 3000) = 3000
+        → Bob pays Jane 3000
+        → Jane: +1500, Bob: 0, Carol: -1500
 
-Step 3: Find max creditor (Jane: +$15) and max debtor (Carol: -$15)
-Step 4: Settle min(15, 15) = $15
-        → Carol pays Jane $15
+Step 3: Max creditor = Jane (+1500), max debtor = Carol (-1500)
+Step 4: Settle min(1500, 1500) = 1500
+        → Carol pays Jane 1500
         → All zeroed out
 
-Result: 2 transactions instead of potentially 3
+Result: 2 transactions (vs up to 3 without simplification)
 ```
+
+### Termination condition
+
+`debtor.bal == 0 && creditor.bal == 0` (exact integer equality, no epsilon).
 
 ### Complexity
 
-- Time: O(n²) in the worst case, where n = number of members
-- This is acceptable because group sizes are small in practice (typically < 20 members)
+- Time: O(n²) worst case, where n = number of members
+- Acceptable in practice (group sizes typically < 20 members)
 
-### Result Shape
+### Result
 
 ```go
 []DebtSummary{
-    { From: "Bob",   To: "Jane",  Amount: 30.00 },
-    { From: "Carol", To: "Jane",  Amount: 15.00 },
+    { FromUserName: "Bob",   ToUserName: "Jane",  Amount: 3000 },  // int64 minor units
+    { FromUserName: "Carol", ToUserName: "Jane",  Amount: 1500 },
 }
 ```
 
-The `settlements` array in the balance API response is this simplified list.
+The `simplified_debts` array in the balance API response converts these values to human-readable amounts using the group's currency factor.
 
 ---
 
@@ -146,6 +171,6 @@ The `settlements` array in the balance API response is this simplified list.
 Expense creation uses a database transaction:
 
 1. `INSERT INTO expenses` — creates the expense record
-2. Batch `INSERT INTO expense_splits` — creates all split records atomically
+2. Batch `INSERT INTO expense_splits` — creates all split records atomically via pgx `SendBatch`
 
 If any insert fails, the entire transaction rolls back. There is no state where an expense exists without its splits, or vice versa.

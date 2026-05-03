@@ -2,7 +2,7 @@
 
 ## What We Are Building
 
-SpendBuddy AI is a real-time expense-sharing backend. Users join groups, add expenses with flexible split methods, and see live balance updates via WebSocket. Authentication supports Google OAuth2 and email OTP.
+SpendBuddy AI is a real-time expense-sharing backend. Users join groups, add expenses with flexible split methods, and see live balance updates via WebSocket. Authentication supports Google OAuth2 and email OTP. Groups each have their own settlement currency chosen from 15 supported ISO 4217 currencies.
 
 ---
 
@@ -58,6 +58,7 @@ SpendBuddyAI-Backend/
 │   │   ├── expense.go
 │   │   ├── group.go
 │   │   ├── message.go
+│   │   ├── currency.go  # Static registry of 15 supported currencies
 │   │   └── interfaces.go
 │   │
 │   ├── auth/            # Authentication services
@@ -66,8 +67,8 @@ SpendBuddyAI-Backend/
 │   │   └── google.go    # Google ID token validation
 │   │
 │   ├── expense/         # Expense business logic
-│   │   ├── service.go   # Split computation (equal/exact/percentage)
-│   │   └── balance.go   # Net balance + debt simplification algorithm
+│   │   ├── service.go   # Split computation (equal/exact/percentage) — int64 throughout
+│   │   └── balance.go   # Net balance + greedy min-cash-flow debt simplification
 │   │
 │   ├── chat/            # WebSocket real-time layer
 │   │   ├── hub.go       # Central hub: rooms per group, broadcast
@@ -77,7 +78,9 @@ SpendBuddyAI-Backend/
 │   │   ├── router.go            # Echo route registration
 │   │   ├── handler/
 │   │   │   ├── auth.go          # Auth endpoints
-│   │   │   ├── expense.go       # Expense + balance endpoints
+│   │   │   ├── user.go          # GET /users/me, PUT /users/me/currency
+│   │   │   ├── group.go         # POST /groups, GET /groups
+│   │   │   ├── expense.go       # Expense + balance endpoints (currency-aware conversion)
 │   │   │   └── chat.go          # WS upgrade + message history
 │   │   └── middleware/
 │   │       └── auth.go          # JWT validation, injects user_id to context
@@ -95,7 +98,8 @@ SpendBuddyAI-Backend/
 │       └── redis.go             # Redis client setup
 │
 ├── migrations/
-│   └── 001_schema.sql           # Full DB schema
+│   ├── 001_schema.sql           # Initial DB schema
+│   └── 002_currencies.sql       # Adds preferred_currency + group currency columns
 │
 ├── Dockerfile                   # Multi-stage: builder → scratch
 ├── docker-compose.yaml          # App + PostgreSQL + Redis
@@ -107,12 +111,12 @@ SpendBuddyAI-Backend/
 
 ## Dependency Injection
 
-All wiring is in `cmd/server/main.go` — no global state, no init() magic:
+All wiring is in `cmd/server/main.go` — no global state, no `init()` magic:
 
 ```
-Infrastructure  →  Repositories  →  Services  →  Handlers  →  Router
-(db, redis)        (user, group,     (jwt, otp,    (auth,        (echo)
-                    expense, msg)     google,        expense,
+Infrastructure  →  Repositories  →  Services  →  Handlers         →  Router
+(db, redis)        (user, group,     (jwt, otp,    (auth, user,        (echo)
+                    expense, msg)     google,        group, expense,
                                       expense)       chat)
 ```
 
@@ -138,12 +142,15 @@ Hub uses an `RWMutex` to protect the room map. Client send buffer is 256 message
 
 | Decision | Rationale |
 |---|---|
-| Amounts stored as integer cents | Avoids floating-point rounding errors in aggregation |
-| Interfaces at domain layer | All layers depend on abstractions, enabling easy testing |
+| `int64` minor units everywhere in domain + service | No floating-point arithmetic on money — eliminates rounding errors |
+| `float64` ↔ `int64` conversion only at HTTP handler | Single boundary using `MinorUnitFactor(currency)` — `×factor` on input, `÷factor` on output |
+| Currency per-group, not per-expense | Avoids FX conversion complexity; all balances in one currency per group |
+| Static currency registry in domain layer | 15 currencies with `DecimalPlaces` drives correct conversion (JPY=0, USD=2) |
+| User `preferred_currency` → group default | Convenience; creator's preference pre-fills group currency at creation |
+| Interfaces at domain layer | All layers depend on abstractions, enabling easy testing/mocking |
 | No ORM (raw pgx) | Full control over query plans; CTEs for balance aggregation |
 | Redis for OTP | OTP is ephemeral with TTL; Redis is the right tool |
-| Amounts in cents → float at service layer | DB stores cents; service exposes float64 for API ergonomics |
-| Greedy min-cash-flow for debt simplification | Minimizes number of settlement transactions |
+| Greedy min-cash-flow for debt simplification | Minimises number of settlement transactions |
 | Scratch Docker image | Minimal attack surface, ~10MB image |
 | Fail-fast config | `mustEnv()` panics on missing required vars at startup |
 

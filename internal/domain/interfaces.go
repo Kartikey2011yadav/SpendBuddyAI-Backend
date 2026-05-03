@@ -14,6 +14,7 @@ type UserRepository interface {
 	FindByEmail(ctx context.Context, email string) (*User, error)
 	FindByGoogleSub(ctx context.Context, sub string) (*User, error)
 	Update(ctx context.Context, user *User) error
+	UpdatePreferredCurrency(ctx context.Context, userID uuid.UUID, currency string) error
 }
 
 // --- Group Repository ---
@@ -26,6 +27,7 @@ type GroupRepository interface {
 	RemoveMember(ctx context.Context, groupID, userID uuid.UUID) error
 	GetMembers(ctx context.Context, groupID uuid.UUID) ([]*GroupMember, error)
 	IsMember(ctx context.Context, groupID, userID uuid.UUID) (bool, error)
+	GetCurrency(ctx context.Context, groupID uuid.UUID) (string, error)
 }
 
 // --- Message Repository ---
