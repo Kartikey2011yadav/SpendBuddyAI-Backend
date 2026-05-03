@@ -10,6 +10,7 @@ A real-time expense-sharing backend in Go. Users form groups, add expenses with 
 
 | Doc | Contents |
 |---|---|
+| [**Roadmap**](ROADMAP.md) | Development phases, iteration log, backlog — update after every session |
 | [Architecture](architecture.md) | Layer structure, directory map, DI wiring, concurrency model, key design decisions |
 | [API Reference](api.md) | All endpoints, request/response shapes, error codes |
 | [Data Models](data-models.md) | Go domain structs, PostgreSQL schema, ER diagram |
