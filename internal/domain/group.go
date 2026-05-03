@@ -29,3 +29,14 @@ type GroupMember struct {
 	Role     GroupRole `json:"role"`
 	JoinedAt time.Time `json:"joined_at"`
 }
+
+// GroupMemberDetail enriches GroupMember with the user's display info.
+// Returned by the list-members endpoint (single JOIN query, no N+1).
+type GroupMemberDetail struct {
+	GroupID     uuid.UUID `json:"group_id"`
+	UserID      uuid.UUID `json:"user_id"`
+	DisplayName string    `json:"display_name"`
+	AvatarURL   *string   `json:"avatar_url,omitempty"`
+	Role        GroupRole `json:"role"`
+	JoinedAt    time.Time `json:"joined_at"`
+}

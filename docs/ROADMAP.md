@@ -1,6 +1,6 @@
 # SpendBuddy AI — Development Roadmap
 
-_Last updated: 2026-05-03_
+_Last updated: 2026-05-02_
 
 This is the living development tracker for SpendBuddy AI. Each section records what is **done**, what is **in progress**, and what comes **next**. Update this file at the end of every development session.
 
@@ -80,31 +80,26 @@ This is the living development tracker for SpendBuddy AI. Each section records w
 
 ---
 
-## Phase 3 — Group Management ✅ COMPLETE (partial)
+## Phase 3 — Group Management ✅ COMPLETE
 
-> Groups with roles, member management.
+> Groups with roles, full member management, security hardening.
 
 | Item | Status | Notes |
 |---|---|---|
 | Create group | ✅ | `POST /api/v1/groups` — creator auto-added as admin |
 | List user's groups | ✅ | `GET /api/v1/groups` — with currency visible |
+| Get group by ID | ✅ | `GET /api/v1/groups/:group_id` — members only |
+| Update group (name/description/avatar) | ✅ | `PATCH /api/v1/groups/:group_id` — admin only |
+| Delete group | ✅ | `DELETE /api/v1/groups/:group_id` — admin only, DB cascades |
 | Group roles (admin/member) | ✅ | Stored in `group_members.role` |
-| Add member (repo-level) | ✅ | `AddMember` with `ON CONFLICT DO NOTHING` |
-| Remove member (repo-level) | ✅ | `RemoveMember` implemented |
-| Is-member check (repo-level) | ✅ | Used by WebSocket auth gate |
-
-**Missing HTTP endpoints:**
-
-| Item | Status | Notes |
-|---|---|---|
-| Get group by ID | 🔲 | `GET /api/v1/groups/:group_id` |
-| Update group (name/description/avatar) | 🔲 | `PATCH /api/v1/groups/:group_id` — admin only |
-| Delete group | 🔲 | `DELETE /api/v1/groups/:group_id` — admin only, cascades |
-| Invite member by user ID | 🔲 | `POST /api/v1/groups/:group_id/members` |
-| Remove member | 🔲 | `DELETE /api/v1/groups/:group_id/members/:user_id` — admin only |
-| List group members | 🔲 | `GET /api/v1/groups/:group_id/members` — with roles |
-| Leave group | 🔲 | `DELETE /api/v1/groups/:group_id/members/me` |
-| Transfer admin role | 🔲 | `PATCH /api/v1/groups/:group_id/members/:user_id` |
+| List group members | ✅ | `GET /api/v1/groups/:group_id/members` — includes display_name, avatar |
+| Invite member by user ID | ✅ | `POST /api/v1/groups/:group_id/members` — admin only |
+| Remove member | ✅ | `DELETE /api/v1/groups/:group_id/members/:user_id` — admin only |
+| Leave group | ✅ | `DELETE /api/v1/groups/:group_id/members/me` — any member |
+| Update member role | ✅ | `PATCH /api/v1/groups/:group_id/members/:user_id` — admin only |
+| Last-admin guard | ✅ | 409 Conflict on remove/demote/leave when only one admin remains |
+| Membership auth on expense routes | ✅ | `CreateExpense`, `GetBalances`, `GetMyBalance` now check `IsMember` |
+| Membership auth on chat history | ✅ | `GET .../messages` now checks `IsMember` |
 
 ---
 
@@ -134,8 +129,7 @@ This is the living development tracker for SpendBuddy AI. Each section records w
 | List settlement history | 🔲 | `GET /api/v1/groups/:group_id/settlements` |
 
 ⚠️ **Tech Debt:**
-- No authorization check on `CreateExpense` — any authenticated user can create an expense for any group (should check group membership)
-- `ListByGroup` exists in the repo but is never called from an HTTP handler
+- `ListByGroup` exists in the repo but is never called from an HTTP handler (list/get/delete expense endpoints still missing)
 
 ---
 
@@ -375,3 +369,4 @@ CREATE TABLE device_tokens (
 | 2026-05-02 | Phase 2 (prep) | Migrated all monetary domain fields from `float64` to `int64` minor units; removed `roundCents()`; rewrote `computeSplits()` with integer arithmetic; updated balance engine and all repositories |
 | 2026-05-03 | Phase 2 | Multi-currency support: 15-currency registry, per-group currency, user preferred currency, currency-aware handler conversion, new user/group handlers, 5 new endpoints, DB migration 002 |
 | 2026-05-03 | Docs | Full doc refresh: api.md, data-models.md, architecture.md, expense-splitting.md, websocket.md, environment.md updated to reflect all changes; pushed to `main` (commit `a4f0299`) |
+| 2026-05-02 | Phase 3 | Complete group management: 8 new HTTP endpoints (group CRUD + member management), last-admin guards (409 Conflict), `GroupMemberDetail` type, 5 new repo methods, security fix — membership check added to expense and chat history handlers |

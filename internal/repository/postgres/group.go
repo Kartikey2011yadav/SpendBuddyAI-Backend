@@ -2,9 +2,11 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/kartikeyyadav/spendbuddy/internal/domain"
 )
@@ -35,6 +37,19 @@ func (r *GroupRepository) FindByID(ctx context.Context, id uuid.UUID) (*domain.G
 		return nil, err
 	}
 	return &g, nil
+}
+
+func (r *GroupRepository) UpdateGroup(ctx context.Context, g *domain.Group) error {
+	_, err := r.db.Exec(ctx, `
+		UPDATE groups SET name=$1, description=$2, avatar_url=$3 WHERE id=$4`,
+		g.Name, g.Description, g.AvatarURL, g.ID,
+	)
+	return err
+}
+
+func (r *GroupRepository) Delete(ctx context.Context, groupID uuid.UUID) error {
+	_, err := r.db.Exec(ctx, `DELETE FROM groups WHERE id=$1`, groupID)
+	return err
 }
 
 func (r *GroupRepository) FindByUserID(ctx context.Context, userID uuid.UUID) ([]*domain.Group, error) {
@@ -104,6 +119,52 @@ func (r *GroupRepository) IsMember(ctx context.Context, groupID, userID uuid.UUI
 		return false, fmt.Errorf("is member check: %w", err)
 	}
 	return exists, nil
+}
+
+func (r *GroupRepository) GetMembersWithDetails(ctx context.Context, groupID uuid.UUID) ([]*domain.GroupMemberDetail, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT gm.group_id, gm.user_id, u.display_name, u.avatar_url, gm.role, gm.joined_at
+		FROM group_members gm
+		JOIN users u ON u.id = gm.user_id
+		WHERE gm.group_id = $1
+		ORDER BY gm.joined_at ASC`, groupID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []*domain.GroupMemberDetail
+	for rows.Next() {
+		var m domain.GroupMemberDetail
+		if err := rows.Scan(&m.GroupID, &m.UserID, &m.DisplayName, &m.AvatarURL, &m.Role, &m.JoinedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, &m)
+	}
+	return out, rows.Err()
+}
+
+func (r *GroupRepository) GetMemberRole(ctx context.Context, groupID, userID uuid.UUID) (domain.GroupRole, error) {
+	var role domain.GroupRole
+	err := r.db.QueryRow(ctx,
+		`SELECT role FROM group_members WHERE group_id=$1 AND user_id=$2`,
+		groupID, userID,
+	).Scan(&role)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", fmt.Errorf("not a member")
+		}
+		return "", err
+	}
+	return role, nil
+}
+
+func (r *GroupRepository) UpdateMemberRole(ctx context.Context, groupID, userID uuid.UUID, role domain.GroupRole) error {
+	_, err := r.db.Exec(ctx,
+		`UPDATE group_members SET role=$1 WHERE group_id=$2 AND user_id=$3`,
+		role, groupID, userID,
+	)
+	return err
 }
 
 func (r *GroupRepository) GetCurrency(ctx context.Context, groupID uuid.UUID) (string, error) {

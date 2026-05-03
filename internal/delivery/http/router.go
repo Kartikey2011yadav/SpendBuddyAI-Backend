@@ -59,9 +59,19 @@ func NewRouter(
 	api.GET("/users/me", userH.GetMe)
 	api.PUT("/users/me/currency", userH.UpdateCurrency)
 
-	// Groups
+	// Groups CRUD
 	api.POST("/groups", groupH.CreateGroup)
 	api.GET("/groups", groupH.ListGroups)
+	api.GET("/groups/:group_id", groupH.GetGroup)
+	api.PATCH("/groups/:group_id", groupH.UpdateGroup)
+	api.DELETE("/groups/:group_id", groupH.DeleteGroup)
+
+	// Group members
+	api.GET("/groups/:group_id/members", groupH.ListMembers)
+	api.POST("/groups/:group_id/members", groupH.AddMember)
+	api.DELETE("/groups/:group_id/members/me", groupH.LeaveGroup)
+	api.DELETE("/groups/:group_id/members/:user_id", groupH.RemoveMember)
+	api.PATCH("/groups/:group_id/members/:user_id", groupH.UpdateMemberRole)
 
 	// WebSocket — JWT via query param ?token=
 	api.GET("/ws/groups/:group_id", chatH.ServeWS)

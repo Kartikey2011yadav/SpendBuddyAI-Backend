@@ -95,6 +95,15 @@ func (h *ChatHandler) GetHistory(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid group_id")
 	}
 
+	rawUID, _ := c.Get(middleware.UserIDKey).(string)
+	userID, err := uuid.Parse(rawUID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusUnauthorized, "invalid user")
+	}
+	if ok, err := h.grpRepo.IsMember(c.Request().Context(), groupID, userID); err != nil || !ok {
+		return echo.NewHTTPError(http.StatusForbidden, "not a group member")
+	}
+
 	msgs, err := h.msgRepo.ListByGroup(c.Request().Context(), groupID, 50, 0)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())

@@ -23,9 +23,14 @@ type GroupRepository interface {
 	Create(ctx context.Context, group *Group) error
 	FindByID(ctx context.Context, id uuid.UUID) (*Group, error)
 	FindByUserID(ctx context.Context, userID uuid.UUID) ([]*Group, error)
+	UpdateGroup(ctx context.Context, group *Group) error
+	Delete(ctx context.Context, groupID uuid.UUID) error
 	AddMember(ctx context.Context, member *GroupMember) error
 	RemoveMember(ctx context.Context, groupID, userID uuid.UUID) error
 	GetMembers(ctx context.Context, groupID uuid.UUID) ([]*GroupMember, error)
+	GetMembersWithDetails(ctx context.Context, groupID uuid.UUID) ([]*GroupMemberDetail, error)
+	GetMemberRole(ctx context.Context, groupID, userID uuid.UUID) (GroupRole, error)
+	UpdateMemberRole(ctx context.Context, groupID, userID uuid.UUID, role GroupRole) error
 	IsMember(ctx context.Context, groupID, userID uuid.UUID) (bool, error)
 	GetCurrency(ctx context.Context, groupID uuid.UUID) (string, error)
 }

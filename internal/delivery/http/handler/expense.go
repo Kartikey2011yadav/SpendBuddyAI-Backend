@@ -68,6 +68,11 @@ func (h *ExpenseHandler) CreateExpense(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusUnauthorized, "invalid user")
 	}
 
+	ok, err := h.grpRepo.IsMember(c.Request().Context(), groupID, payerID)
+	if err != nil || !ok {
+		return echo.NewHTTPError(http.StatusForbidden, "not a group member")
+	}
+
 	currency, err := h.grpRepo.GetCurrency(c.Request().Context(), groupID)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "group not found")
@@ -133,6 +138,15 @@ func (h *ExpenseHandler) GetBalances(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid group_id")
 	}
 
+	rawUID, _ := c.Get(middleware.UserIDKey).(string)
+	callerID, err := uuid.Parse(rawUID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusUnauthorized, "invalid user")
+	}
+	if ok, err := h.grpRepo.IsMember(c.Request().Context(), groupID, callerID); err != nil || !ok {
+		return echo.NewHTTPError(http.StatusForbidden, "not a group member")
+	}
+
 	currency, err := h.grpRepo.GetCurrency(c.Request().Context(), groupID)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "group not found")
@@ -177,14 +191,20 @@ func (h *ExpenseHandler) GetMyBalance(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid group_id")
 	}
 
+	rawUID, _ := c.Get(middleware.UserIDKey).(string)
+	userID, err := uuid.Parse(rawUID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusUnauthorized, "invalid user")
+	}
+	if ok, err := h.grpRepo.IsMember(c.Request().Context(), groupID, userID); err != nil || !ok {
+		return echo.NewHTTPError(http.StatusForbidden, "not a group member")
+	}
+
 	currency, err := h.grpRepo.GetCurrency(c.Request().Context(), groupID)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "group not found")
 	}
 	factor := domain.MinorUnitFactor(currency)
-
-	rawUID, _ := c.Get(middleware.UserIDKey).(string)
-	userID, _ := uuid.Parse(rawUID)
 
 	netMinor, err := h.svc.GetNetBalance(c.Request().Context(), groupID, userID)
 	if err != nil {
